@@ -7,413 +7,167 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 20px;
-      max-width: 600px;
-      margin: auto;
-    }
-    button {
-      display: inline-block;
-      padding: 10px 20px;
-      font-size: 16px;
-      margin: 5px;
-      border: none;
-      border-radius: 8px;
-      background-color: #007bff;
-      color: white;
-      transition: background-color 0.3s;
-      min-width: 120px;
-    }
-    button:disabled {
-      background-color: #cccccc;
-    }
-    button:hover:enabled {
-      background-color: #0056b3;
-    }
-    #timer, #distance {
-      font-size: 20px;
-      margin: 10px 0;
-    }
-    #goalProgress {
-      font-size: 18px;
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    #map {
-      height: 400px;
-      margin-top: 20px;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .log {
-      margin-top: 20px;
-      text-align: left;
-      max-width: 100%;
-      margin-left: auto;
-      margin-right: auto;
-      padding: 10px;
-    }
-    .log-item {
-      border-bottom: 1px solid #ccc;
-      padding: 10px 0;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-      overflow-x: auto;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      font-size: 14px;
-      text-align: center;
-    }
-    canvas {
-      width: 100% !important;
-      height: auto !important;
-      margin-top: 20px;
-    }
-    @media (max-width: 600px) {
-      button {
-        font-size: 14px;
-        min-width: 100px;
-        padding: 8px 16px;
-      }
-      #map {
-        height: 350px;
-      }
-      th, td {
-        font-size: 12px;
-      }
-    }
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; max-width: 800px; margin: auto; }
+    button { padding: 10px 20px; margin: 5px; border: none; border-radius: 8px; background-color: #007bff; color: white; font-size: 16px; }
+    button:hover { background-color: #0056b3; }
+    #map { height: 300px; margin: 20px 0; }
+    .log { margin-top: 20px; text-align: left; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; font-size: 14px; text-align: center; }
+    canvas { margin-top: 20px; }
   </style>
 </head>
+
 <body>
 
 <h1>🏃 My Running Tracker</h1>
-<div id="timer">00:00</div>
-<div id="distance">Distance: 0.00 km</div>
-<div id="goalProgress"></div>
 
+<!-- 버튼 영역 -->
 <button id="startBtn">Start Running</button>
 <button id="stopBtn" disabled>Stop Running</button>
-<button onclick="setGoal()">Set Goal</button>
 <button onclick="downloadCSV()">Download CSV</button>
 
+<!-- 지도 표시 -->
 <div id="map"></div>
+
+<!-- 러닝 기록 -->
 <div class="log">
   <h2>📋 My Runs</h2>
   <div id="runLogs"></div>
 </div>
 
-<h2>📈 Monthly Distance Chart</h2>
-<canvas id="monthlyChart" width="400" height="200"></canvas>
+<!-- 주간 통계 + 주간 그래프 -->
+<h2>📅 Weekly Stats</h2>
+<div id="weeklyStats"></div>
+<h2>📈 Weekly Distance Trend</h2>
+<canvas id="weeklyChart" width="400" height="200"></canvas>
 
+<!-- 월간 그래프 -->
+<h2>📈 Monthly Distance & Pace</h2>
+<canvas id="monthlyChart" width="400" height="200"></canvas>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-let startTime, timerInterval, watchId;
-let previousPosition = null;
-let totalDistance = 0;
-let map, pathPolyline;
-let pathCoordinates = [];
-let startMarker, endMarker;
-let goalDistance = null;
-let goalTime = null;
-let goalReached = false;
-
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const timer = document.getElementById('timer');
-const distanceDisplay = document.getElementById('distance');
-const runLogs = document.getElementById('runLogs');
-
-window.onload = () => {
-  initMap();
-  loadRuns();
-};
-
-function initMap() {
-  map = L.map('map').setView([37.5665, 126.9780], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-  pathPolyline = L.polyline([], { color: 'red' }).addTo(map);
-}
-
-startBtn.onclick = () => {
-  startTime = Date.now();
-  totalDistance = 0;
-  previousPosition = null;
-  pathCoordinates = [];
-  if (startMarker) startMarker.remove();
-  if (endMarker) endMarker.remove();
-
-  if ('geolocation' in navigator) {
-    watchId = navigator.geolocation.watchPosition(position => {
-      const { latitude, longitude, accuracy } = position.coords;
-      if (accuracy > 30) return;
-
-      const newLatLng = [latitude, longitude];
-      if (previousPosition) {
-        const moved = calculateDistance(
-          previousPosition.latitude,
-          previousPosition.longitude,
-          latitude,
-          longitude
-        );
-        if (moved < 0.005) return;
-        totalDistance += moved;
-        distanceDisplay.textContent = `Distance: ${totalDistance.toFixed(2)} km`;
-        updateGoalProgress();
-        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-        if (!goalReached && ((goalDistance && totalDistance >= goalDistance) || (goalTime && elapsedSeconds >= goalTime))) {
-          goalReached = true;
-          alert(`🎉 축하합니다! 목표를 달성했습니다!`);
-          clearInterval(timerInterval);
-          if (watchId) navigator.geolocation.clearWatch(watchId);
-          saveRun(elapsedSeconds, totalDistance, pathCoordinates);
-          if (pathCoordinates.length > 0) {
-            endMarker = L.marker(pathCoordinates[pathCoordinates.length-1]).addTo(map).bindPopup('도착').openPopup();
-          }
-          resetTimer();
-          loadRuns();
-        }
-      } else {
-        startMarker = L.marker(newLatLng).addTo(map).bindPopup('출발').openPopup();
-      }
-      previousPosition = { latitude, longitude };
-      pathCoordinates.push(newLatLng);
-      pathPolyline.setLatLngs(pathCoordinates);
-      map.setView(newLatLng, map.getZoom());
-    }, error => {
-      alert('GPS error: ' + error.message);
-    }, {
-      enableHighAccuracy: true,
-      maximumAge: 1000,
-      timeout: 5000
-    });
-  } else {
-    alert('Geolocation is not supported by this browser.');
-  }
-  timerInterval = setInterval(updateTimer, 1000);
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-};
-
-stopBtn.onclick = () => {
-  clearInterval(timerInterval);
-  if (watchId) navigator.geolocation.clearWatch(watchId);
-  const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-  saveRun(elapsedSeconds, totalDistance, pathCoordinates);
-  if (pathCoordinates.length > 0) {
-    endMarker = L.marker(pathCoordinates[pathCoordinates.length-1]).addTo(map).bindPopup('도착').openPopup();
-  }
-  resetTimer();
-  loadRuns();
-};
-
-function updateTimer() {
-  const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-  const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
-  const seconds = String(elapsedSeconds % 60).padStart(2, '0');
-  timer.textContent = `${minutes}:${seconds}`;
-}
-
-function resetTimer() {
-  timer.textContent = "00:00";
-  distanceDisplay.textContent = "Distance: 0.00 km";
-  if (pathPolyline) pathPolyline.setLatLngs([]);
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-}
-
-function setGoal() {
-  const distanceInput = prompt("목표 거리를 입력하세요 (km)", "5");
-  const distanceValue = parseFloat(distanceInput);
-  const timeInput = prompt("목표 시간을 입력하세요 (분)", "30");
-  const timeValue = parseFloat(timeInput);
-  if ((!isNaN(distanceValue) && distanceValue > 0) || (!isNaN(timeValue) && timeValue > 0)) {
-    goalDistance = !isNaN(distanceValue) ? distanceValue : null;
-    goalTime = !isNaN(timeValue) ? timeValue * 60 : null;
-    goalReached = false;
-    alert(`목표 설정 완료! 거리: ${goalDistance ?? '-'}km, 시간: ${goalTime ? goalTime/60 : '-'}분`);
-    updateGoalProgress();
-  } else {
-    alert("올바른 값을 입력해주세요.");
-  }
-}
-
-function updateGoalProgress() {
-  const goalDiv = document.getElementById('goalProgress');
-  if (!goalDiv) return;
-  if (goalDistance) {
-    const percent = Math.min((totalDistance / goalDistance) * 100, 100);
-    goalDiv.innerHTML = `🏁 목표 진행률: ${totalDistance.toFixed(2)}km / ${goalDistance}km (${percent.toFixed(1)}%)`;
-  } else {
-    goalDiv.innerHTML = '';
-  }
-}
-
-function saveRun(seconds, distance, path) {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  runs.push({ date: new Date().toISOString(), time: seconds, distance: distance, path: path });
-  localStorage.setItem('runs', JSON.stringify(runs));
-}
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-function loadRuns() {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  runLogs.innerHTML = '';
-  runs.reverse().forEach((run, index) => {
-    const pace = run.distance > 0 ? (run.time / 60 / run.distance).toFixed(2) : '-';
-    const div = document.createElement('div');
-    div.className = 'log-item';
-    div.innerHTML = `
-      ${run.date}<br>
-      Distance: ${run.distance.toFixed(2)} km<br>
-      Time: ${Math.floor(run.time / 60)}m ${run.time % 60}s<br>
-      Pace: ${pace} min/km<br>
-      <button onclick="showPath(${runs.length - 1 - index})">📍 Show Path</button>
-      <button onclick="editRun(${runs.length - 1 - index})">✏️ Edit</button>
-      <button onclick="deleteRun(${runs.length - 1 - index})">🗑️ Delete</button>
-    `;
-    runLogs.appendChild(div);
-  });
-  loadMonthlyStats();
-}
-
+// 여기에 전체 JavaScript 통합 (loadMonthlyStats 포함)
 function loadMonthlyStats() {
   const runs = JSON.parse(localStorage.getItem('runs') || '[]');
   const monthlyData = {};
+  const weeklyData = { totalDistance: 0, totalTime: 0 };
+  const dailyDistances = Array(7).fill(0);
+
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
 
   runs.forEach(run => {
-    let runDate = new Date(run.date);
-    if (isNaN(runDate.getTime())) {
-      const parts = run.date.match(/(\d+)\. (\d+)\. (\d+)\./);
-      if (parts) {
-        const [_, year, month, day] = parts;
-        runDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      }
-    }
+    const runDate = new Date(run.date);
+    const dayOfWeek = runDate.getDay();
 
     const yearMonth = `${runDate.getFullYear()}-${String(runDate.getMonth() + 1).padStart(2, '0')}`;
-    if (!monthlyData[yearMonth]) {
-      monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
-    }
+    if (!monthlyData[yearMonth]) monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
     monthlyData[yearMonth].totalDistance += run.distance;
     monthlyData[yearMonth].totalTime += run.time;
+
+    if (runDate >= startOfWeek) {
+      weeklyData.totalDistance += run.distance;
+      weeklyData.totalTime += run.time;
+      dailyDistances[dayOfWeek] += run.distance;
+    }
   });
 
-  const container = document.createElement('div');
-  container.innerHTML = `<h3>📅 Monthly Stats</h3>`;
-  const table = document.createElement('table');
-  table.innerHTML = `
-    <tr>
-      <th>Month</th>
-      <th>Total Distance (km)</th>
-      <th>Total Time (hh:mm:ss)</th>
-      <th>Average Pace (min/km)</th>
-    </tr>
-  `;
-
-  for (const month in monthlyData) {
-    const data = monthlyData[month];
-    const avgPace = data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : '-';
-    const hours = String(Math.floor(data.totalTime / 3600)).padStart(2, '0');
-    const minutes = String(Math.floor((data.totalTime % 3600) / 60)).padStart(2, '0');
-    const seconds = String(data.totalTime % 60).padStart(2, '0');
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${month}</td>
-      <td>${data.totalDistance.toFixed(2)}</td>
-      <td>${hours}:${minutes}:${seconds}</td>
-      <td>${avgPace}</td>
+  const weeklyContainer = document.getElementById('weeklyStats');
+  if (weeklyData.totalDistance > 0) {
+    const avgPace = (weeklyData.totalTime / 60 / weeklyData.totalDistance).toFixed(2);
+    weeklyContainer.innerHTML = `
+      <b>Total Distance:</b> ${weeklyData.totalDistance.toFixed(2)} km<br>
+      <b>Total Time:</b> ${Math.floor(weeklyData.totalTime/3600)}h ${Math.floor((weeklyData.totalTime%3600)/60)}m ${weeklyData.totalTime%60}s<br>
+      <b>Average Pace:</b> ${avgPace} min/km
     `;
-    table.appendChild(row);
+  } else {
+    weeklyContainer.innerHTML = `<p>No data this week</p>`;
   }
 
-  container.appendChild(table);
-  runLogs.prepend(container);
+  // ⭐ 최고 기록 표시
+  if (runs.length > 0) {
+    const maxRun = runs.reduce((a, b) => (a.distance > b.distance ? a : b));
+    const bestPaceRun = runs.filter(r => r.distance > 0).reduce((a, b) => 
+      (a.time / a.distance < b.time / b.distance ? a : b)
+    );
 
+    weeklyContainer.innerHTML += `
+      <h3>🏅 Best Records</h3>
+      <b>Longest Run:</b> ${maxRun.distance.toFixed(2)} km<br>
+      <b>Best Pace:</b> ${(bestPaceRun.time / 60 / bestPaceRun.distance).toFixed(2)} min/km
+    `;
+  }
+
+  // 📈 주간 그래프
+  const weekCtx = document.getElementById('weeklyChart').getContext('2d');
+  new Chart(weekCtx, {
+    type: 'bar',
+    data: {
+      labels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+      datasets: [{
+        label: 'Distance (km)',
+        data: dailyDistances,
+        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: { scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+  });
+
+  // 📈 월간 그래프
+  const monthCtx = document.getElementById('monthlyChart').getContext('2d');
   const labels = Object.keys(monthlyData);
-  const distances = Object.values(monthlyData).map(data => data.totalDistance);
-  const avgPaces = Object.values(monthlyData).map(data =>
-    data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
+  const distances = Object.values(monthlyData).map(d => d.totalDistance);
+  const avgPaces = Object.values(monthlyData).map(d => 
+    d.totalDistance > 0 ? (d.totalTime / 60 / d.totalDistance).toFixed(2) : null
   );
 
-  const maxDistance = Math.max(...distances, 1);
-  const ctx = document.getElementById('monthlyChart').getContext('2d');
-  const minPace = Math.min(...avgPaces.filter(p => p !== null).map(Number));
-const maxPace = Math.max(...avgPaces.filter(p => p !== null).map(Number));
-const paceMin = Math.floor(Math.min(5, minPace - 1));
-const paceMax = Math.ceil(Math.max(10, maxPace + 1));
-
-new Chart(ctx, {
-  data: {
-    labels: labels,
-    datasets: [
-      {
-        type: 'bar',
-        label: 'Total Distance (km)',
-        data: distances,
-        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1,
-        yAxisID: 'y-distance'
-      },
-      {
-        type: 'line',
-        label: 'Average Pace (min/km)',
-        data: avgPaces,
-        borderColor: 'rgba(255, 99, 132, 1)',
-        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-        borderWidth: 2,
-        fill: false,
-        tension: 0.3,
-        yAxisID: 'y-pace'
-      }
-    ]
-  },
-  options: {
-    responsive: true,
-    interaction: { mode: 'index', intersect: false },
-    scales: {
-      'y-distance': {
-        type: 'linear',
-        position: 'left',
-        title: { display: true, text: 'Distance (km)' },
-        beginAtZero: true,
-        suggestedMax: Math.max(5, Math.ceil(maxDistance + 1))
-      },
-      'y-pace': {
-        type: 'linear',
-        position: 'right',
-        title: { display: true, text: 'Pace (min/km)' },
-        suggestedMin: paceMin,
-        suggestedMax: paceMax,
-        grid: { drawOnChartArea: false }
-      }
+  new Chart(monthCtx, {
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Total Distance (km)',
+          data: distances,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1,
+          yAxisID: 'y-distance'
+        },
+        {
+          type: 'line',
+          label: 'Average Pace (min/km)',
+          data: avgPaces,
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.3,
+          yAxisID: 'y-pace'
+        }
+      ]
     },
-    plugins: {
-      legend: { position: 'top' },
-      tooltip: { mode: 'index', intersect: false }
+    options: {
+      responsive: true,
+      scales: {
+        'y-distance': { type: 'linear', position: 'left', beginAtZero: true },
+        'y-pace': { type: 'linear', position: 'right', grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { position: 'top' } }
     }
-  }
-});
+  });
 }
 
+// ⭐ 로딩 시 자동 실행
+window.onload = () => {
+  loadMonthlyStats();
+};
 </script>
+
 </body>
 </html>
