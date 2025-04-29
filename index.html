@@ -354,12 +354,13 @@ function loadMonthlyStats() {
 
   const maxDistance = Math.max(...distances, 1);
   const ctx = document.getElementById('monthlyChart').getContext('2d');
+  
   new Chart(ctx, {
-    type: 'bar',
     data: {
       labels: labels,
       datasets: [
         {
+          type: 'bar',
           label: 'Total Distance (km)',
           data: distances,
           backgroundColor: 'rgba(54, 162, 235, 0.6)',
@@ -389,12 +390,15 @@ function loadMonthlyStats() {
           position: 'left',
           title: { display: true, text: 'Distance (km)' },
           beginAtZero: true,
-          suggestedMax: maxDistance < 2 ? 2 : maxDistance + 1
+          suggestedMin: 0,
+          suggestedMax: 2 // 거리 2km로 보기 좋게
         },
         'y-pace': {
           type: 'linear',
           position: 'right',
           title: { display: true, text: 'Pace (min/km)' },
+          suggestedMin: 5,
+          suggestedMax: 20,
           grid: { drawOnChartArea: false }
         }
       },
@@ -404,6 +408,7 @@ function loadMonthlyStats() {
       }
     }
   });
+
 }
 
 </script>
