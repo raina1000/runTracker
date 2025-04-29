@@ -354,61 +354,63 @@ function loadMonthlyStats() {
 
   const maxDistance = Math.max(...distances, 1);
   const ctx = document.getElementById('monthlyChart').getContext('2d');
-  
-  new Chart(ctx, {
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          type: 'bar',
-          label: 'Total Distance (km)',
-          data: distances,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1,
-          yAxisID: 'y-distance'
-        },
-        {
-          type: 'line',
-          label: 'Average Pace (min/km)',
-          data: avgPaces,
-          borderColor: 'rgba(255, 99, 132, 1)',
-          backgroundColor: 'rgba(255, 99, 132, 0.2)',
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          yAxisID: 'y-pace'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        'y-distance': {
-          type: 'linear',
-          position: 'left',
-          title: { display: true, text: 'Distance (km)' },
-          beginAtZero: true,
-          suggestedMin: 0,
-          suggestedMax: 2 // 거리 2km로 보기 좋게
-        },
-        'y-pace': {
-          type: 'linear',
-          position: 'right',
-          title: { display: true, text: 'Pace (min/km)' },
-          suggestedMin: 5,
-          suggestedMax: 20,
-          grid: { drawOnChartArea: false }
-        }
-      },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: { mode: 'index', intersect: false }
-      }
-    }
-  });
+  const minPace = Math.min(...avgPaces.filter(p => p !== null).map(Number));
+const maxPace = Math.max(...avgPaces.filter(p => p !== null).map(Number));
+const paceMin = Math.floor(Math.min(5, minPace - 1));
+const paceMax = Math.ceil(Math.max(10, maxPace + 1));
 
+new Chart(ctx, {
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        type: 'bar',
+        label: 'Total Distance (km)',
+        data: distances,
+        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1,
+        yAxisID: 'y-distance'
+      },
+      {
+        type: 'line',
+        label: 'Average Pace (min/km)',
+        data: avgPaces,
+        borderColor: 'rgba(255, 99, 132, 1)',
+        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.3,
+        yAxisID: 'y-pace'
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      'y-distance': {
+        type: 'linear',
+        position: 'left',
+        title: { display: true, text: 'Distance (km)' },
+        beginAtZero: true,
+        suggestedMax: Math.max(5, Math.ceil(maxDistance + 1))
+      },
+      'y-pace': {
+        type: 'linear',
+        position: 'right',
+        title: { display: true, text: 'Pace (min/km)' },
+        suggestedMin: paceMin,
+        suggestedMax: paceMax,
+        grid: { drawOnChartArea: false }
+      }
+    },
+    plugins: {
+      legend: { position: 'top' },
+      tooltip: { mode: 'index', intersect: false }
+    }
+  }
+});
 }
 
 </script>
