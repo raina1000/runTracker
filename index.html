@@ -240,26 +240,79 @@ function loadMonthlyStats() {
   container.appendChild(table);
   runLogs.prepend(container);
 
-  // Chart.js 막대그래프 그리기
+  // === Chart.js 복합형 그래프 그리기 ===
   const labels = Object.keys(monthlyData);
   const distances = Object.values(monthlyData).map(data => data.totalDistance);
+  const avgPaces = Object.values(monthlyData).map(data =>
+    data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
+  );
 
   const ctx = document.getElementById('monthlyChart').getContext('2d');
   new Chart(ctx, {
-    type: 'bar',
     data: {
       labels: labels,
-      datasets: [{
-        label: 'Total Distance (km)',
-        data: distances,
-        backgroundColor: 'rgba(75, 192, 192, 0.5)',
-        borderColor: 'rgba(75, 192, 192, 1)',
-        borderWidth: 1
-      }]
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Total Distance (km)',
+          data: distances,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1,
+          yAxisID: 'y-distance'
+        },
+        {
+          type: 'line',
+          label: 'Average Pace (min/km)',
+          data: avgPaces,
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.3,
+          yAxisID: 'y-pace'
+        }
+      ]
     },
     options: {
+      responsive: true,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
       scales: {
-        y: { beginAtZero: true }
+        'y-distance': {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'Distance (km)' },
+          beginAtZero: true
+        },
+        'y-pace': {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'Pace (min/km)' },
+          grid: { drawOnChartArea: false }
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            boxWidth: 20,
+            padding: 20,
+            font: { size: 14 }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              if (context.dataset.label === 'Average Pace (min/km)') {
+                return `${context.dataset.label}: ${context.formattedValue} min/km`;
+              }
+              return `${context.dataset.label}: ${context.formattedValue} km`;
+            }
+          }
+        }
       }
     }
   });
