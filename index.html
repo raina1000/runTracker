@@ -312,12 +312,7 @@ function updateGoalProgress() {
 
 function saveRun(seconds, distance, path) {
   const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  runs.push({
-    date: new Date().toISOString(), // ✨ ISO 형식으로 저장
-    time: seconds,
-    distance: distance,
-    path: path
-  });
+  runs.push({ date: new Date().toLocaleString(), time: seconds, distance: distance, path: path });
   localStorage.setItem('runs', JSON.stringify(runs));
 }
 
@@ -368,10 +363,10 @@ function loadMonthlyStats() {
   const monthlyData = {};
 
   runs.forEach(run => {
-    const runDate = new Date(run.date);
+    let runDate = new Date(run.date); // ❗ let으로 선언해야 보정 가능
+
     // 보정 추가
     if (isNaN(runDate.getTime())) {
-      // 기존 저장 포맷이 잘못됐으면 수동 파싱 시도
       const parts = run.date.match(/(\d+)\. (\d+)\. (\d+)\./);
       if (parts) {
         const [_, year, month, day] = parts;
@@ -429,7 +424,6 @@ function loadMonthlyStats() {
     data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
   );
 
-  // ✨ 거리 최대값 계산
   const maxDistance = Math.max(...distances, 1);
 
   const ctx = document.getElementById('monthlyChart').getContext('2d');
@@ -471,7 +465,7 @@ function loadMonthlyStats() {
           position: 'left',
           title: { display: true, text: 'Distance (km)' },
           beginAtZero: true,
-          suggestedMax: maxDistance < 2 ? 2 : maxDistance + 1 // ✨ 자동 스케일링
+          suggestedMax: maxDistance < 2 ? 2 : maxDistance + 1
         },
         'y-pace': {
           type: 'linear',
@@ -483,132 +477,6 @@ function loadMonthlyStats() {
       plugins: {
         legend: { position: 'top' },
         tooltip: { mode: 'index', intersect: false }
-      }
-    }
-  });
-}
-
-const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  const monthlyData = {};
-
-  runs.forEach(run => {
-    const runDate = new Date(run.date);
-    const yearMonth = `${runDate.getFullYear()}-${String(runDate.getMonth() + 1).padStart(2, '0')}`;
-
-    if (!monthlyData[yearMonth]) {
-      monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
-    }
-
-    monthlyData[yearMonth].totalDistance += run.distance;
-    monthlyData[yearMonth].totalTime += run.time;
-  });
-
-  const container = document.createElement('div');
-  container.innerHTML = `<h3>📅 Monthly Stats</h3>`;
-
-  const table = document.createElement('table');
-  table.innerHTML = `
-    <tr>
-      <th>Month</th>
-      <th>Total Distance (km)</th>
-      <th>Total Time (hh:mm:ss)</th>
-      <th>Average Pace (min/km)</th>
-    </tr>
-  `;
-
-  for (const month in monthlyData) {
-    const data = monthlyData[month];
-    const avgPace = data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : '-';
-    const hours = String(Math.floor(data.totalTime / 3600)).padStart(2, '0');
-    const minutes = String(Math.floor((data.totalTime % 3600) / 60)).padStart(2, '0');
-    const seconds = String(data.totalTime % 60).padStart(2, '0');
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${month}</td>
-      <td>${data.totalDistance.toFixed(2)}</td>
-      <td>${hours}:${minutes}:${seconds}</td>
-      <td>${avgPace}</td>
-    `;
-    table.appendChild(row);
-  }
-
-  container.appendChild(table);
-  runLogs.prepend(container);
-
-  // === Chart.js 복합형 그래프 그리기 ===
-  const labels = Object.keys(monthlyData);
-  const distances = Object.values(monthlyData).map(data => data.totalDistance);
-  const avgPaces = Object.values(monthlyData).map(data =>
-    data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
-  );
-
-  const ctx = document.getElementById('monthlyChart').getContext('2d');
-  new Chart(ctx, {
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          type: 'bar',
-          label: 'Total Distance (km)',
-          data: distances,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1,
-          yAxisID: 'y-distance'
-        },
-        {
-          type: 'line',
-          label: 'Average Pace (min/km)',
-          data: avgPaces,
-          borderColor: 'rgba(255, 99, 132, 1)',
-          backgroundColor: 'rgba(255, 99, 132, 0.2)',
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          yAxisID: 'y-pace'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      interaction: {
-        mode: 'index',
-        intersect: false
-      },
-      scales: {
-        'y-distance': {
-          type: 'linear',
-          position: 'left',
-          title: { display: true, text: 'Distance (km)' },
-          beginAtZero: true
-        },
-        'y-pace': {
-          type: 'linear',
-          position: 'right',
-          title: { display: true, text: 'Pace (min/km)' },
-          grid: { drawOnChartArea: false }
-        }
-      },
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            boxWidth: 20,
-            padding: 20,
-            font: { size: 14 }
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              if (context.dataset.label === 'Average Pace (min/km)') {
-                return `${context.dataset.label}: ${context.formattedValue} min/km`;
-              }
-              return `${context.dataset.label}: ${context.formattedValue} km`;
-            }
-          }
-        }
       }
     }
   });
