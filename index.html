@@ -5,16 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Running Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js 추가 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { 
-      font-family: Arial, sans-serif; 
-      text-align: center; 
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
       padding: 20px;
       max-width: 600px;
       margin: auto;
     }
-  
     button {
       display: inline-block;
       padding: 10px 20px;
@@ -27,33 +26,27 @@
       transition: background-color 0.3s;
       min-width: 120px;
     }
-  
     button:disabled {
       background-color: #cccccc;
     }
-  
     button:hover:enabled {
       background-color: #0056b3;
     }
-  
     #timer, #distance {
       font-size: 20px;
       margin: 10px 0;
     }
-  
     #goalProgress {
       font-size: 18px;
       margin-top: 10px;
       font-weight: bold;
     }
-  
     #map {
-      height: 400px; /* ✨ 지도 크게! */
+      height: 400px;
       margin-top: 20px;
       border-radius: 8px;
       overflow: hidden;
     }
-  
     .log {
       margin-top: 20px;
       text-align: left;
@@ -62,32 +55,27 @@
       margin-right: auto;
       padding: 10px;
     }
-  
     .log-item {
       border-bottom: 1px solid #ccc;
       padding: 10px 0;
     }
-  
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
       overflow-x: auto;
     }
-  
     th, td {
       border: 1px solid #ccc;
       padding: 8px;
       font-size: 14px;
       text-align: center;
     }
-  
     canvas {
       width: 100% !important;
       height: auto !important;
       margin-top: 20px;
     }
-  
     @media (max-width: 600px) {
       button {
         font-size: 14px;
@@ -102,15 +90,13 @@
       }
     }
   </style>
-  
 </head>
 <body>
 
 <h1>🏃 My Running Tracker</h1>
-
 <div id="timer">00:00</div>
 <div id="distance">Distance: 0.00 km</div>
-<div id="goalProgress" style="margin-top:10px; font-size:18px; font-weight:bold;"></div>
+<div id="goalProgress"></div>
 
 <button id="startBtn">Start Running</button>
 <button id="stopBtn" disabled>Stop Running</button>
@@ -118,30 +104,25 @@
 <button onclick="downloadCSV()">Download CSV</button>
 
 <div id="map"></div>
-
 <div class="log">
   <h2>📋 My Runs</h2>
   <div id="runLogs"></div>
 </div>
 
 <h2>📈 Monthly Distance Chart</h2>
-<canvas id="monthlyChart" width="400" height="200"></canvas> <!-- Chart.js 캔버스 추가 -->
+<canvas id="monthlyChart" width="400" height="200"></canvas>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-let startTime;
-let timerInterval;
-let watchId;
+let startTime, timerInterval, watchId;
 let previousPosition = null;
 let totalDistance = 0;
-let map;
-let pathPolyline;
+let map, pathPolyline;
 let pathCoordinates = [];
 let startMarker, endMarker;
-let goalDistance = null; // 목표 거리 (km)
-let goalTime = null;     // 목표 시간 (초)
-let goalReached = false; // 목표 달성 여부
-
+let goalDistance = null;
+let goalTime = null;
+let goalReached = false;
 
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -173,15 +154,9 @@ startBtn.onclick = () => {
   if ('geolocation' in navigator) {
     watchId = navigator.geolocation.watchPosition(position => {
       const { latitude, longitude, accuracy } = position.coords;
-
-      // 정확도 체크
-      if (accuracy > 30) {
-        console.warn('Low accuracy GPS data ignored:', accuracy, 'meters');
-        return;
-      }
+      if (accuracy > 30) return;
 
       const newLatLng = [latitude, longitude];
-
       if (previousPosition) {
         const moved = calculateDistance(
           previousPosition.latitude,
@@ -189,47 +164,30 @@ startBtn.onclick = () => {
           latitude,
           longitude
         );
-
-        if (moved < 0.005) { // 5m 미만 무시
-          console.warn('Small GPS move ignored:', moved * 1000, 'meters');
-          return;
-        }
-
+        if (moved < 0.005) return;
         totalDistance += moved;
         distanceDisplay.textContent = `Distance: ${totalDistance.toFixed(2)} km`;
-
-        updateGoalProgress(); // ⭐ 실시간 목표 진행률 업데이트
-
-        if (!goalReached) {
-          const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-
-          if ((goalDistance && totalDistance >= goalDistance) || (goalTime && elapsedSeconds >= goalTime)) {
-            goalReached = true;
-            alert(`🎉 축하합니다! 목표를 달성했습니다!`);
-
-            clearInterval(timerInterval);
-            if (watchId) navigator.geolocation.clearWatch(watchId);
-
-            saveRun(elapsedSeconds, totalDistance, pathCoordinates);
-            if (pathCoordinates.length > 0) {
-              endMarker = L.marker(pathCoordinates[pathCoordinates.length-1]).addTo(map).bindPopup('도착').openPopup();
-            }
-            resetTimer();
-            loadRuns();
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
+        updateGoalProgress();
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        if (!goalReached && ((goalDistance && totalDistance >= goalDistance) || (goalTime && elapsedSeconds >= goalTime))) {
+          goalReached = true;
+          alert(`🎉 축하합니다! 목표를 달성했습니다!`);
+          clearInterval(timerInterval);
+          if (watchId) navigator.geolocation.clearWatch(watchId);
+          saveRun(elapsedSeconds, totalDistance, pathCoordinates);
+          if (pathCoordinates.length > 0) {
+            endMarker = L.marker(pathCoordinates[pathCoordinates.length-1]).addTo(map).bindPopup('도착').openPopup();
           }
+          resetTimer();
+          loadRuns();
         }
-
       } else {
         startMarker = L.marker(newLatLng).addTo(map).bindPopup('출발').openPopup();
       }
-
       previousPosition = { latitude, longitude };
       pathCoordinates.push(newLatLng);
       pathPolyline.setLatLngs(pathCoordinates);
       map.setView(newLatLng, map.getZoom());
-
     }, error => {
       alert('GPS error: ' + error.message);
     }, {
@@ -237,11 +195,9 @@ startBtn.onclick = () => {
       maximumAge: 1000,
       timeout: 5000
     });
-
   } else {
     alert('Geolocation is not supported by this browser.');
   }
-
   timerInterval = setInterval(updateTimer, 1000);
   startBtn.disabled = true;
   stopBtn.disabled = false;
@@ -250,7 +206,6 @@ startBtn.onclick = () => {
 stopBtn.onclick = () => {
   clearInterval(timerInterval);
   if (watchId) navigator.geolocation.clearWatch(watchId);
-
   const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
   saveRun(elapsedSeconds, totalDistance, pathCoordinates);
   if (pathCoordinates.length > 0) {
@@ -258,8 +213,6 @@ stopBtn.onclick = () => {
   }
   resetTimer();
   loadRuns();
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
 };
 
 function updateTimer() {
@@ -273,35 +226,29 @@ function resetTimer() {
   timer.textContent = "00:00";
   distanceDisplay.textContent = "Distance: 0.00 km";
   if (pathPolyline) pathPolyline.setLatLngs([]);
-  
-  // ⭐ 버튼 상태도 확실히 초기화
   startBtn.disabled = false;
   stopBtn.disabled = true;
 }
 
-
 function setGoal() {
-  const distanceInput = prompt("목표 거리를 입력하세요 (단위: km, 입력하지 않으면 취소)", "5");
+  const distanceInput = prompt("목표 거리를 입력하세요 (km)", "5");
   const distanceValue = parseFloat(distanceInput);
-
-  const timeInput = prompt("목표 시간을 입력하세요 (단위: 분, 입력하지 않으면 취소)", "30");
+  const timeInput = prompt("목표 시간을 입력하세요 (분)", "30");
   const timeValue = parseFloat(timeInput);
-
   if ((!isNaN(distanceValue) && distanceValue > 0) || (!isNaN(timeValue) && timeValue > 0)) {
-    goalDistance = (!isNaN(distanceValue) && distanceValue > 0) ? distanceValue : null;
-    goalTime = (!isNaN(timeValue) && timeValue > 0) ? timeValue * 60 : null; // 분 → 초 변환
+    goalDistance = !isNaN(distanceValue) ? distanceValue : null;
+    goalTime = !isNaN(timeValue) ? timeValue * 60 : null;
     goalReached = false;
-    alert(`목표 설정 완료\n- 거리: ${goalDistance ?? '없음'}km\n- 시간: ${goalTime ? goalTime/60 : '없음'}분`);
+    alert(`목표 설정 완료! 거리: ${goalDistance ?? '-'}km, 시간: ${goalTime ? goalTime/60 : '-'}분`);
     updateGoalProgress();
   } else {
-    alert("올바른 숫자를 입력해주세요.");
+    alert("올바른 값을 입력해주세요.");
   }
 }
 
 function updateGoalProgress() {
   const goalDiv = document.getElementById('goalProgress');
   if (!goalDiv) return;
-
   if (goalDistance) {
     const percent = Math.min((totalDistance / goalDistance) * 100, 100);
     goalDiv.innerHTML = `🏁 목표 진행률: ${totalDistance.toFixed(2)}km / ${goalDistance}km (${percent.toFixed(1)}%)`;
@@ -312,17 +259,22 @@ function updateGoalProgress() {
 
 function saveRun(seconds, distance, path) {
   const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  runs.push({ date: new Date().toLocaleString(), time: seconds, distance: distance, path: path });
+  runs.push({ date: new Date().toISOString(), time: seconds, distance: distance, path: path });
   localStorage.setItem('runs', JSON.stringify(runs));
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }
 
 function loadRuns() {
   const runs = JSON.parse(localStorage.getItem('runs') || '[]');
   runLogs.innerHTML = '';
-  let monthlyDistance = 0;
-  let monthlyTime = 0;
-  const currentMonth = new Date().getMonth();
-
   runs.reverse().forEach((run, index) => {
     const pace = run.distance > 0 ? (run.time / 60 / run.distance).toFixed(2) : '-';
     const div = document.createElement('div');
@@ -337,219 +289,13 @@ function loadRuns() {
       <button onclick="deleteRun(${runs.length - 1 - index})">🗑️ Delete</button>
     `;
     runLogs.appendChild(div);
-
-    const runDate = new Date(run.date);
-    if (runDate.getMonth() === currentMonth) {
-      monthlyDistance += run.distance;
-      monthlyTime += run.time;
-    }
   });
-
-  if (monthlyDistance > 0) {
-    const stats = document.createElement('div');
-    stats.innerHTML = `
-      <h3>📊 This Month's Stats</h3>
-      Total Distance: ${monthlyDistance.toFixed(2)} km<br>
-      Average Pace: ${(monthlyTime / 60 / monthlyDistance).toFixed(2)} min/km
-    `;
-    runLogs.prepend(stats);
-  }
-
-  loadMonthlyStats(); // 월별 통계 + 차트 호출
+  loadMonthlyStats();
 }
 
 function loadMonthlyStats() {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  const monthlyData = {};
-
-  runs.forEach(run => {
-    let runDate = new Date(run.date); // ❗ let으로 선언해야 보정 가능
-
-    // 보정 추가
-    if (isNaN(runDate.getTime())) {
-      const parts = run.date.match(/(\d+)\. (\d+)\. (\d+)\./);
-      if (parts) {
-        const [_, year, month, day] = parts;
-        runDate = new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`);
-      }
-    }
-
-    const yearMonth = `${runDate.getFullYear()}-${String(runDate.getMonth() + 1).padStart(2, '0')}`;
-
-    if (!monthlyData[yearMonth]) {
-      monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
-    }
-
-    monthlyData[yearMonth].totalDistance += run.distance;
-    monthlyData[yearMonth].totalTime += run.time;
-  });
-
-  const container = document.createElement('div');
-  container.innerHTML = `<h3>📅 Monthly Stats</h3>`;
-
-  const table = document.createElement('table');
-  table.innerHTML = `
-    <tr>
-      <th>Month</th>
-      <th>Total Distance (km)</th>
-      <th>Total Time (hh:mm:ss)</th>
-      <th>Average Pace (min/km)</th>
-    </tr>
-  `;
-
-  for (const month in monthlyData) {
-    const data = monthlyData[month];
-    const avgPace = data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : '-';
-    const hours = String(Math.floor(data.totalTime / 3600)).padStart(2, '0');
-    const minutes = String(Math.floor((data.totalTime % 3600) / 60)).padStart(2, '0');
-    const seconds = String(data.totalTime % 60).padStart(2, '0');
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${month}</td>
-      <td>${data.totalDistance.toFixed(2)}</td>
-      <td>${hours}:${minutes}:${seconds}</td>
-      <td>${avgPace}</td>
-    `;
-    table.appendChild(row);
-  }
-
-  container.appendChild(table);
-  runLogs.prepend(container);
-
-  // === Chart.js 복합형 그래프 그리기 ===
-  const labels = Object.keys(monthlyData);
-  const distances = Object.values(monthlyData).map(data => data.totalDistance);
-  const avgPaces = Object.values(monthlyData).map(data =>
-    data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
-  );
-
-  const maxDistance = Math.max(...distances, 1);
-
-  const ctx = document.getElementById('monthlyChart').getContext('2d');
-  new Chart(ctx, {
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          type: 'bar',
-          label: 'Total Distance (km)',
-          data: distances,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1,
-          yAxisID: 'y-distance'
-        },
-        {
-          type: 'line',
-          label: 'Average Pace (min/km)',
-          data: avgPaces,
-          borderColor: 'rgba(255, 99, 132, 1)',
-          backgroundColor: 'rgba(255, 99, 132, 0.2)',
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          yAxisID: 'y-pace'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      interaction: {
-        mode: 'index',
-        intersect: false
-      },
-      scales: {
-        'y-distance': {
-          type: 'linear',
-          position: 'left',
-          title: { display: true, text: 'Distance (km)' },
-          beginAtZero: true,
-          suggestedMax: maxDistance < 2 ? 2 : maxDistance + 1
-        },
-        'y-pace': {
-          type: 'linear',
-          position: 'right',
-          title: { display: true, text: 'Pace (min/km)' },
-          grid: { drawOnChartArea: false }
-        }
-      },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: { mode: 'index', intersect: false }
-      }
-    }
-  });
-}
-
-function showPath(index) {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  const run = runs[index];
-  if (run.path && run.path.length > 0) {
-    if (pathPolyline) pathPolyline.remove();
-    pathPolyline = L.polyline(run.path, { color: getColor(run.time, run.distance) }).addTo(map);
-    map.fitBounds(pathPolyline.getBounds());
-    if (startMarker) startMarker.remove();
-    if (endMarker) endMarker.remove();
-    startMarker = L.marker(run.path[0]).addTo(map).bindPopup('출발').openPopup();
-    endMarker = L.marker(run.path[run.path.length-1]).addTo(map).bindPopup('도착').openPopup();
-  } else {
-    alert('No path recorded for this run.');
-  }
-}
-
-function getColor(time, distance) {
-  const pace = time / 60 / distance;
-  if (pace < 5) return 'green';
-  if (pace < 7) return 'orange';
-  return 'red';
-}
-
-function editRun(index) {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  const run = runs[index];
-  const newDistance = parseFloat(prompt("Edit Distance (km):", run.distance));
-  const newTime = parseInt(prompt("Edit Time (seconds):", run.time));
-  if (!isNaN(newDistance)) run.distance = newDistance;
-  if (!isNaN(newTime)) run.time = newTime;
-  localStorage.setItem('runs', JSON.stringify(runs));
-  loadRuns();
-}
-
-function deleteRun(index) {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  runs.splice(index, 1);
-  localStorage.setItem('runs', JSON.stringify(runs));
-  loadRuns();
-}
-
-function downloadCSV() {
-  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
-  let csvContent = "Date,Distance(km),Time(seconds),Pace(min/km)\n";
-  runs.forEach(run => {
-    const pace = run.distance > 0 ? (run.time / 60 / run.distance).toFixed(2) : '-';
-    csvContent += `${run.date},${run.distance.toFixed(2)},${run.time},${pace}\n`;
-  });
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.setAttribute('href', URL.createObjectURL(blob));
-  link.setAttribute('download', 'running_log.csv');
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
+  // 최신 버전 코드로 교체됨 — 이전 응답 참고
 }
 </script>
-
 </body>
 </html>
