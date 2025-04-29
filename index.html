@@ -7,15 +7,54 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js 추가 -->
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-    button { padding: 10px 20px; font-size: 18px; margin: 10px; }
-    #map { height: 300px; margin-top: 20px; }
-    .log { margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
-    .log-item { border-bottom: 1px solid #ccc; padding: 10px 0; }
-    table { margin-top: 20px; width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    h2, h3 { margin-top: 30px; }
+    body { 
+      font-family: Arial, sans-serif; 
+      text-align: center; 
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px; /* ✨ 글자 크기 줄이기 */
+      margin: 10px;
+      border: none;
+      border-radius: 8px; /* ✨ 더 예쁜 둥근 버튼 */
+      background-color: #007bff;
+      color: white;
+      transition: background-color 0.3s;
+      min-width: 120px; /* ✨ 너무 좁은 버튼 방지 */
+    }
+    button:disabled {
+      background-color: #cccccc;
+    }
+    button:hover:enabled {
+      background-color: #0056b3;
+    }
+    #timer, #distance {
+      font-size: 20px;
+      margin: 10px 0;
+    }
+    #goalProgress {
+      font-size: 18px;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    #map {
+      height: 300px;
+      margin-top: 20px;
+    }
+    .log {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .log-item {
+      border-bottom: 1px solid #ccc;
+      padding: 10px 0;
+    }
   </style>
+  
 </head>
 <body>
 
