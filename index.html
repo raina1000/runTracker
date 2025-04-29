@@ -26,6 +26,7 @@
 
 <button id="startBtn">Start Running</button>
 <button id="stopBtn" disabled>Stop Running</button>
+<button onclick="setGoal()">Set Goal</button>
 <button onclick="downloadCSV()">Download CSV</button>
 
 <div id="map"></div>
@@ -49,6 +50,8 @@ let map;
 let pathPolyline;
 let pathCoordinates = [];
 let startMarker, endMarker;
+let goalDistance = null; // 목표 거리 (km)
+let goalReached = false; // 목표 달성 여부
 
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -79,17 +82,52 @@ startBtn.onclick = () => {
 
   if ('geolocation' in navigator) {
     watchId = navigator.geolocation.watchPosition(position => {
-      const { latitude, longitude } = position.coords;
+      const { latitude, longitude, accuracy } = position.coords;
+
+      // 1. 정확도 필터 추가 (30m 초과 데이터 무시)
+      if (accuracy > 30) {
+        console.warn('Low accuracy GPS data ignored:', accuracy, 'meters');
+        return;
+      }
+
       const newLatLng = [latitude, longitude];
 
       if (previousPosition) {
-        totalDistance += calculateDistance(
+        const moved = calculateDistance(
           previousPosition.latitude,
           previousPosition.longitude,
           latitude,
           longitude
         );
+
+        if (moved < 0.005) { // 5미터 이내 이동 무시
+          console.warn('Small GPS move ignored:', moved * 1000, 'meters');
+          return;
+        }
+
+        totalDistance += moved;
         distanceDisplay.textContent = `Distance: ${totalDistance.toFixed(2)} km`;
+
+        // ⭐ 목표 거리 달성 체크
+        if (goalDistance && !goalReached && totalDistance >= goalDistance) {
+          goalReached = true;
+          alert(`🎉 축하합니다! 목표 거리 ${goalDistance}km를 달성했습니다!`);
+
+          // 자동으로 러닝 종료 처리
+          clearInterval(timerInterval);
+          if (watchId) navigator.geolocation.clearWatch(watchId);
+
+          const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+          saveRun(elapsedSeconds, totalDistance, pathCoordinates);
+          if (pathCoordinates.length > 0) {
+            endMarker = L.marker(pathCoordinates[pathCoordinates.length-1]).addTo(map).bindPopup('도착').openPopup();
+          }
+          resetTimer();
+          loadRuns();
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        }
+
       } else {
         startMarker = L.marker(newLatLng).addTo(map).bindPopup('출발').openPopup();
       }
@@ -129,6 +167,18 @@ stopBtn.onclick = () => {
   startBtn.disabled = false;
   stopBtn.disabled = true;
 };
+
+function setGoal() {
+  const input = prompt("목표 거리를 입력하세요 (단위: km)", "5");
+  const value = parseFloat(input);
+  if (!isNaN(value) && value > 0) {
+    goalDistance = value;
+    goalReached = false;
+    alert(`목표 거리 ${goalDistance}km로 설정되었습니다!`);
+  } else {
+    alert("올바른 숫자를 입력해주세요.");
+  }
+}
 
 function updateTimer() {
   const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
