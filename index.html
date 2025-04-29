@@ -1,3 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Running Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+    button {
+      display: inline-block;
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007bff;
+      color: white;
+      transition: background-color 0.3s;
+      min-width: 120px;
+    }
+    button:disabled {
+      background-color: #cccccc;
+    }
+    button:hover:enabled {
+      background-color: #0056b3;
+    }
+    #timer, #distance {
+      font-size: 20px;
+      margin: 10px 0;
+    }
+    #goalProgress {
+      font-size: 18px;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    #map {
+      height: 400px;
+      margin-top: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .log {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 100%;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 10px;
+    }
+    .log-item {
+      border-bottom: 1px solid #ccc;
+      padding: 10px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      overflow-x: auto;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      font-size: 14px;
+      text-align: center;
+    }
+    canvas {
+      width: 100% !important;
+      height: auto !important;
+      margin-top: 20px;
+    }
+    @media (max-width: 600px) {
+      button {
+        font-size: 14px;
+        min-width: 100px;
+        padding: 8px 16px;
+      }
+      #map {
+        height: 350px;
+      }
+      th, td {
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>🏃 My Running Tracker</h1>
+<div id="timer">00:00</div>
+<div id="distance">Distance: 0.00 km</div>
+<div id="goalProgress"></div>
+
+<button id="startBtn">Start Running</button>
+<button id="stopBtn" disabled>Stop Running</button>
+<button onclick="setGoal()">Set Goal</button>
+<button onclick="downloadCSV()">Download CSV</button>
+
+<div id="map"></div>
+<div class="log">
+  <h2>📋 My Runs</h2>
+  <div id="runLogs"></div>
+</div>
+
+<h2>📈 Monthly Distance Chart</h2>
 <!-- 전체코드 유지 -->
 
 <!-- 📅 Weekly Distance Trend 추가 -->
