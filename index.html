@@ -37,19 +37,18 @@
   <div id="runLogs"></div>
 </div>
 
-<!-- 주간 통계 + 주간 그래프 -->
-<h2>📅 Weekly Stats</h2>
-<div id="weeklyStats"></div>
-<h2>📈 Weekly Distance Trend</h2>
-<canvas id="weeklyChart" width="400" height="200"></canvas>
-
-<!-- 월간 그래프 -->
-<h2>📈 Monthly Distance & Pace</h2>
-<canvas id="monthlyChart" width="400" height="200"></canvas>
-
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
 let map, pathPolyline;
+let goalDistance = null;
+let goalTime = null;
+let tracking = false;
+let watchId = null;
+let totalDistance = 0;
+let startTime = null;
+let timer = null;
+let previousPosition = null;
+let pathCoordinates = [];
 
 function initMap() {
   map = L.map('map').setView([37.5665, 126.9780], 15);
@@ -57,23 +56,119 @@ function initMap() {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
   pathPolyline = L.polyline([], { color: 'red' }).addTo(map);
+  loadRuns();
 }
 
 function setGoal() {
-  const goal = prompt("Enter your distance goal in km:");
-  alert(`Goal of ${goal} km set!`);
+  const dist = parseFloat(prompt("Enter distance goal in km (optional):"));
+  const timeMin = parseFloat(prompt("Enter time goal in minutes (optional):"));
+  goalDistance = !isNaN(dist) ? dist : null;
+  goalTime = !isNaN(timeMin) ? timeMin * 60 : null;
+  alert(`Goal set!\nDistance: ${goalDistance ?? 'N/A'} km\nTime: ${goalTime ? goalTime / 60 : 'N/A'} min`);
 }
+
+function startRunning() {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported");
+    return;
+  }
+  tracking = true;
+  totalDistance = 0;
+  previousPosition = null;
+  startTime = Date.now();
+  pathCoordinates = [];
+
+  pathPolyline.setLatLngs([]);
+  watchId = navigator.geolocation.watchPosition(position => {
+    const { latitude, longitude } = position.coords;
+    const latlng = [latitude, longitude];
+    if (previousPosition) {
+      const dist = calculateDistance(previousPosition.lat, previousPosition.lng, latitude, longitude);
+      if (dist > 0.005) totalDistance += dist;
+    }
+    previousPosition = { lat: latitude, lng: longitude };
+    pathCoordinates.push(latlng);
+    pathPolyline.addLatLng(latlng);
+    map.setView(latlng);
+  }, err => {
+    alert("GPS error: " + err.message);
+  }, { enableHighAccuracy: true });
+
+  timer = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    if ((goalDistance && totalDistance >= goalDistance) || (goalTime && elapsed >= goalTime)) {
+      stopRunning();
+      alert("🎉 Goal achieved!");
+    }
+  }, 1000);
+
+  document.getElementById("startBtn").disabled = true;
+  document.getElementById("stopBtn").disabled = false;
+}
+
+function stopRunning() {
+  tracking = false;
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  if (timer) clearInterval(timer);
+  document.getElementById("startBtn").disabled = false;
+  document.getElementById("stopBtn").disabled = true;
+
+  const duration = Math.floor((Date.now() - startTime) / 1000);
+  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
+  runs.push({
+    date: new Date().toISOString(),
+    time: duration,
+    distance: totalDistance,
+    path: pathCoordinates
+  });
+  localStorage.setItem('runs', JSON.stringify(runs));
+  alert("✅ Run saved!");
+  loadRuns();
+}
+
+function loadRuns() {
+  const runLogs = document.getElementById('runLogs');
+  runLogs.innerHTML = '';
+  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
+  runs.forEach(run => {
+    const div = document.createElement('div');
+    div.style.marginBottom = '10px';
+    div.innerHTML = `
+      <strong>Date:</strong> ${new Date(run.date).toLocaleString()}<br>
+      <strong>Distance:</strong> ${run.distance.toFixed(2)} km<br>
+      <strong>Time:</strong> ${Math.floor(run.time/60)}m ${run.time%60}s
+    `;
+    runLogs.appendChild(div);
+  });
+}
+
+document.getElementById("startBtn").onclick = startRunning;
+document.getElementById("stopBtn").onclick = stopRunning;
 
 function downloadCSV() {
-  alert("CSV download triggered.");
+  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
+  let csv = "Date,Time (sec),Distance (km)\n";
+  runs.forEach(run => {
+    csv += `${run.date},${run.time},${run.distance.toFixed(2)}\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'running_log.csv';
+  link.click();
 }
 
-// 기존의 loadMonthlyStats 함수가 여기에 포함되어야 합니다...
-// 생략...
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 window.onload = () => {
   initMap();
-  loadMonthlyStats();
 };
 </script>
 
