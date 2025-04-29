@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Running Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js 추가 -->
   <style>
     body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
     button { padding: 10px 20px; font-size: 18px; margin: 10px; }
     #map { height: 300px; margin-top: 20px; }
     .log { margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
     .log-item { border-bottom: 1px solid #ccc; padding: 10px 0; }
+    table { margin-top: 20px; width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    h2, h3 { margin-top: 30px; }
   </style>
 </head>
 <body>
@@ -30,6 +34,9 @@
   <h2>📋 My Runs</h2>
   <div id="runLogs"></div>
 </div>
+
+<h2>📈 Monthly Distance Chart</h2>
+<canvas id="monthlyChart" width="400" height="200"></canvas> <!-- Chart.js 캔버스 추가 -->
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
@@ -180,6 +187,82 @@ function loadRuns() {
     `;
     runLogs.prepend(stats);
   }
+
+  loadMonthlyStats(); // 월별 통계 + 차트 호출
+}
+
+function loadMonthlyStats() {
+  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
+  const monthlyData = {};
+
+  runs.forEach(run => {
+    const runDate = new Date(run.date);
+    const yearMonth = `${runDate.getFullYear()}-${String(runDate.getMonth() + 1).padStart(2, '0')}`;
+
+    if (!monthlyData[yearMonth]) {
+      monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
+    }
+
+    monthlyData[yearMonth].totalDistance += run.distance;
+    monthlyData[yearMonth].totalTime += run.time;
+  });
+
+  const container = document.createElement('div');
+  container.innerHTML = `<h3>📅 Monthly Stats</h3>`;
+
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <tr>
+      <th>Month</th>
+      <th>Total Distance (km)</th>
+      <th>Total Time (hh:mm:ss)</th>
+      <th>Average Pace (min/km)</th>
+    </tr>
+  `;
+
+  for (const month in monthlyData) {
+    const data = monthlyData[month];
+    const avgPace = data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : '-';
+    const hours = String(Math.floor(data.totalTime / 3600)).padStart(2, '0');
+    const minutes = String(Math.floor((data.totalTime % 3600) / 60)).padStart(2, '0');
+    const seconds = String(data.totalTime % 60).padStart(2, '0');
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${month}</td>
+      <td>${data.totalDistance.toFixed(2)}</td>
+      <td>${hours}:${minutes}:${seconds}</td>
+      <td>${avgPace}</td>
+    `;
+    table.appendChild(row);
+  }
+
+  container.appendChild(table);
+  runLogs.prepend(container);
+
+  // Chart.js 막대그래프 그리기
+  const labels = Object.keys(monthlyData);
+  const distances = Object.values(monthlyData).map(data => data.totalDistance);
+
+  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Total Distance (km)',
+        data: distances,
+        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
 }
 
 function showPath(index) {
@@ -243,10 +326,9 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
 }
