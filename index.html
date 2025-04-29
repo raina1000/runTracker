@@ -294,8 +294,118 @@ function loadRuns() {
 }
 
 function loadMonthlyStats() {
-  // 최신 버전 코드로 교체됨 — 이전 응답 참고
+  const runs = JSON.parse(localStorage.getItem('runs') || '[]');
+  const monthlyData = {};
+
+  runs.forEach(run => {
+    let runDate = new Date(run.date);
+    if (isNaN(runDate.getTime())) {
+      const parts = run.date.match(/(\d+)\. (\d+)\. (\d+)\./);
+      if (parts) {
+        const [_, year, month, day] = parts;
+        runDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      }
+    }
+
+    const yearMonth = `${runDate.getFullYear()}-${String(runDate.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyData[yearMonth]) {
+      monthlyData[yearMonth] = { totalDistance: 0, totalTime: 0 };
+    }
+    monthlyData[yearMonth].totalDistance += run.distance;
+    monthlyData[yearMonth].totalTime += run.time;
+  });
+
+  const container = document.createElement('div');
+  container.innerHTML = `<h3>📅 Monthly Stats</h3>`;
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <tr>
+      <th>Month</th>
+      <th>Total Distance (km)</th>
+      <th>Total Time (hh:mm:ss)</th>
+      <th>Average Pace (min/km)</th>
+    </tr>
+  `;
+
+  for (const month in monthlyData) {
+    const data = monthlyData[month];
+    const avgPace = data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : '-';
+    const hours = String(Math.floor(data.totalTime / 3600)).padStart(2, '0');
+    const minutes = String(Math.floor((data.totalTime % 3600) / 60)).padStart(2, '0');
+    const seconds = String(data.totalTime % 60).padStart(2, '0');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${month}</td>
+      <td>${data.totalDistance.toFixed(2)}</td>
+      <td>${hours}:${minutes}:${seconds}</td>
+      <td>${avgPace}</td>
+    `;
+    table.appendChild(row);
+  }
+
+  container.appendChild(table);
+  runLogs.prepend(container);
+
+  const labels = Object.keys(monthlyData);
+  const distances = Object.values(monthlyData).map(data => data.totalDistance);
+  const avgPaces = Object.values(monthlyData).map(data =>
+    data.totalDistance > 0 ? (data.totalTime / 60 / data.totalDistance).toFixed(2) : null
+  );
+
+  const maxDistance = Math.max(...distances, 1);
+  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Total Distance (km)',
+          data: distances,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1,
+          yAxisID: 'y-distance'
+        },
+        {
+          type: 'line',
+          label: 'Average Pace (min/km)',
+          data: avgPaces,
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.3,
+          yAxisID: 'y-pace'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        'y-distance': {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'Distance (km)' },
+          beginAtZero: true,
+          suggestedMax: maxDistance < 2 ? 2 : maxDistance + 1
+        },
+        'y-pace': {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'Pace (min/km)' },
+          grid: { drawOnChartArea: false }
+        }
+      },
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: { mode: 'index', intersect: false }
+      }
+    }
+  });
 }
+
 </script>
 </body>
 </html>
