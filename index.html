@@ -186,7 +186,12 @@ function resetTimer() {
   timer.textContent = "00:00";
   distanceDisplay.textContent = "Distance: 0.00 km";
   if (pathPolyline) pathPolyline.setLatLngs([]);
+  
+  // ⭐ 버튼 상태도 확실히 초기화
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
 }
+
 
 function setGoal() {
   const distanceInput = prompt("목표 거리를 입력하세요 (단위: km, 입력하지 않으면 취소)", "5");
