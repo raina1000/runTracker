@@ -176,8 +176,12 @@
     .btn-primary:hover:enabled  { background: var(--primary-dark); }
     .btn-danger    { background: var(--danger);   color: #fff; }
     .btn-danger:hover:enabled   { background: #b91c1c; }
+    .btn-warning   { background: var(--warning);  color: #fff; }
+    .btn-warning:hover:enabled  { background: #d97706; }
     .btn-secondary { background: var(--bg);       color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover:enabled { background: var(--border); }
+    .btn-outline   { background: transparent; color: var(--danger); border: 1.5px solid var(--danger); }
+    .btn-outline:hover:enabled  { background: #fef2f2; }
 
     /* ── Map ── */
     #map {
@@ -356,11 +360,21 @@
 
     <div id="goalProgress"></div>
 
-    <div class="btn-row">
-      <button class="btn btn-primary" id="startBtn">▶ 시작</button>
-      <button class="btn btn-danger"  id="stopBtn" disabled>■ 정지</button>
-      <button class="btn btn-secondary" onclick="setGoal()">🎯 목표 설정</button>
+    <!-- 상태별 버튼 그룹 -->
+    <div class="btn-row" id="btns-idle">
+      <button class="btn btn-primary" onclick="startRun()">▶ 시작</button>
+      <button class="btn btn-secondary" onclick="setGoal()">🎯 목표</button>
       <button class="btn btn-secondary" onclick="downloadCSV()">⬇ CSV</button>
+    </div>
+    <div class="btn-row" id="btns-running" style="display:none;">
+      <button class="btn btn-warning" onclick="pauseRun()">⏸ 일시정지</button>
+      <button class="btn btn-danger"  onclick="saveAndStop()">💾 저장 종료</button>
+      <button class="btn btn-secondary" onclick="setGoal()">🎯 목표</button>
+    </div>
+    <div class="btn-row" id="btns-paused" style="display:none;">
+      <button class="btn btn-primary" onclick="resumeRun()">▶ 재개</button>
+      <button class="btn btn-danger"  onclick="saveAndStop()">💾 저장 종료</button>
+      <button class="btn btn-outline" onclick="cancelRun()">✕ 런 취소</button>
     </div>
   </div>
 
@@ -412,36 +426,41 @@
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-let startTime, timerInterval, watchId;
+/* ── 상태 변수 ── */
+let startTime        = null;
+let totalPausedMs    = 0;   // 누적 일시정지 시간
+let pausedAt         = null;
+let timerInterval    = null;
+let watchId          = null;
+let runState         = 'idle'; // 'idle' | 'running' | 'paused'
+
 let previousPosition = null;
 let lastPositionTime = null;
-let totalDistance = 0;
-let map, pathPolyline;
-let pathCoordinates = [];
+let totalDistance    = 0;
+let pathCoordinates  = [];
 let startMarker, endMarker;
+
 let goalDistance = null;
-let goalTime = null;
-let goalReached = false;
+let goalTime     = null;
+let goalReached  = false;
 let monthlyChart = null;
 
-// GPS improvement state
+let map, pathPolyline;
 let smoothedLat = null, smoothedLng = null;
 let stableReadings = 0;
-const SMOOTH_ALPHA = 0.25;   // exponential smoothing (0=no update, 1=no smoothing)
-const MAX_SPEED_MS = 12;     // 12 m/s ≈ 43 km/h — rejects GPS jumps
+let gpsStaleCount  = 0;
 
-const startBtn = document.getElementById('startBtn');
-const stopBtn  = document.getElementById('stopBtn');
-const timerEl  = document.getElementById('timer');
+const SMOOTH_ALPHA = 0.25;
+const MAX_SPEED_MS = 12;      // 43 km/h 초과 → GPS 튐
+const GPS_STALE_SEC = 20;     // 이 시간(초) 동안 GPS 업데이트 없으면 멈춤 감지
+
+const timerEl   = document.getElementById('timer');
 const distValEl = document.getElementById('distanceVal');
-const runLogs  = document.getElementById('runLogs');
+const runLogs   = document.getElementById('runLogs');
 
-window.onload = () => {
-  initMap();
-  loadRuns();
-};
+window.onload = () => { initMap(); loadRuns(); };
 
-/* ── Map ── */
+/* ── 지도 ── */
 function initMap() {
   map = L.map('map').setView([37.5665, 126.9780], 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -450,48 +469,50 @@ function initMap() {
   pathPolyline = L.polyline([], { color: '#3b82f6', weight: 4 }).addTo(map);
 }
 
-/* ── Start ── */
-startBtn.onclick = () => {
-  startTime = Date.now();
-  totalDistance = 0;
-  previousPosition = null;
-  lastPositionTime = null;
-  pathCoordinates = [];
-  goalReached = false;
-  smoothedLat = null;
-  smoothedLng = null;
-  stableReadings = 0;
-  document.getElementById('currentPace').textContent = '--:--';
-  if (startMarker) startMarker.remove();
-  if (endMarker)   endMarker.remove();
+/* ── 버튼 상태 전환 ── */
+function setRunState(state) {
+  runState = state;
+  document.getElementById('btns-idle').style.display    = state === 'idle'    ? '' : 'none';
+  document.getElementById('btns-running').style.display = state === 'running' ? '' : 'none';
+  document.getElementById('btns-paused').style.display  = state === 'paused'  ? '' : 'none';
+}
 
-  if (!('geolocation' in navigator)) {
-    alert('이 브라우저는 위치 정보를 지원하지 않습니다.');
-    return;
-  }
+/* ── 경과 시간 (일시정지 제외) ── */
+function getElapsedSeconds() {
+  if (!startTime) return 0;
+  const pauseOffset = (runState === 'paused' && pausedAt) ? (Date.now() - pausedAt) : 0;
+  return Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs - pauseOffset) / 1000));
+}
 
+/* ── GPS watchPosition 시작/재시작 ── */
+function startGpsWatch() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  gpsStaleCount = 0;
   updateGpsStatus('신호 잡는 중...', 'weak');
 
   watchId = navigator.geolocation.watchPosition(pos => {
+    if (runState !== 'running') return; // 일시정지 중엔 무시
+
     const { latitude, longitude, accuracy } = pos.coords;
     const now = Date.now();
 
-    // ① 적응형 정확도 필터: GPS 워밍업 전 100m, 안정화 후 25m
+    // ① 적응형 정확도 필터
     const threshold = stableReadings >= 5 ? 25 : 100;
     if (accuracy > threshold) {
       updateGpsStatus(`신호 잡는 중... (±${Math.round(accuracy)}m)`, 'weak');
       return;
     }
     if (accuracy <= 20) stableReadings = Math.min(stableReadings + 1, 10);
-    const quality = accuracy <= 15 ? 'good' : accuracy <= 30 ? 'ok' : 'weak';
-    updateGpsStatus(`GPS ±${Math.round(accuracy)}m`, quality);
+    updateGpsStatus(`GPS ±${Math.round(accuracy)}m`,
+      accuracy <= 15 ? 'good' : accuracy <= 30 ? 'ok' : 'weak');
 
-    // ② 지수 이동평균으로 좌표 스무딩 (노이즈 감소)
+    gpsStaleCount = 0; // 업데이트 왔으니 멈춤 카운터 리셋
+
+    // ② 좌표 스무딩
     if (smoothedLat === null) {
-      smoothedLat = latitude;
-      smoothedLng = longitude;
+      smoothedLat = latitude; smoothedLng = longitude;
     } else {
-      smoothedLat = SMOOTH_ALPHA * latitude + (1 - SMOOTH_ALPHA) * smoothedLat;
+      smoothedLat = SMOOTH_ALPHA * latitude  + (1 - SMOOTH_ALPHA) * smoothedLat;
       smoothedLng = SMOOTH_ALPHA * longitude + (1 - SMOOTH_ALPHA) * smoothedLng;
     }
 
@@ -503,48 +524,41 @@ startBtn.onclick = () => {
         smoothedLat, smoothedLng
       );
 
-      // ③ 속도 이상 감지: 두 점 사이 속도가 MAX_SPEED_MS 초과 시 GPS 튐으로 간주
+      // ③ 속도 이상 감지
       if (lastPositionTime) {
         const dt = (now - lastPositionTime) / 1000;
-        const speedMs = (moved * 1000) / dt;
-        if (speedMs > MAX_SPEED_MS) {
-          lastPositionTime = now;
-          return;
+        if (dt > 0 && (moved * 1000) / dt > MAX_SPEED_MS) {
+          lastPositionTime = now; return;
         }
-
-        // 현재 페이스 표시 (min/km)
-        if (moved > 0.001 && dt > 0) {
-          const paceDecimal = dt / 60 / moved;
-          if (paceDecimal < 30) { // 비현실적인 값 제외
-            const paceMin = Math.floor(paceDecimal);
-            const paceSec = Math.round((paceDecimal - paceMin) * 60);
+        // 현재 페이스
+        if (moved > 0.001) {
+          const pd = dt / 60 / moved;
+          if (pd < 30) {
+            const pm = Math.floor(pd);
             document.getElementById('currentPace').textContent =
-              `${paceMin}:${String(paceSec).padStart(2, '0')}`;
+              `${pm}:${String(Math.round((pd - pm) * 60)).padStart(2, '0')}`;
           }
         }
       }
 
       if (moved < 0.003) { lastPositionTime = now; return; }
-
       totalDistance += moved;
       distValEl.textContent = totalDistance.toFixed(2);
       updateGoalProgress();
 
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const elapsed = getElapsedSeconds();
       if (!goalReached &&
           ((goalDistance && totalDistance >= goalDistance) ||
-           (goalTime && elapsed >= goalTime))) {
+           (goalTime     && elapsed >= goalTime))) {
         goalReached = true;
         clearInterval(timerInterval);
-        navigator.geolocation.clearWatch(watchId);
+        navigator.geolocation.clearWatch(watchId); watchId = null;
         saveRun(elapsed, totalDistance, pathCoordinates);
-        if (pathCoordinates.length > 0)
+        if (pathCoordinates.length)
           endMarker = L.marker(pathCoordinates[pathCoordinates.length - 1])
             .addTo(map).bindPopup('🏁 도착').openPopup();
         alert('🎉 축하합니다! 목표를 달성했습니다!');
-        resetTimer();
-        loadRuns();
-        return;
+        doReset(); loadRuns(); return;
       }
     } else {
       startMarker = L.marker(newLatLng).addTo(map).bindPopup('🚀 출발').openPopup();
@@ -555,45 +569,116 @@ startBtn.onclick = () => {
     pathCoordinates.push(newLatLng);
     pathPolyline.setLatLngs(pathCoordinates);
     map.setView(newLatLng, map.getZoom());
+
   }, err => {
     updateGpsStatus('GPS 오류: ' + err.message, 'weak');
   }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
-
-  timerInterval = setInterval(updateTimer, 1000);
-  startBtn.disabled = true;
-  stopBtn.disabled  = false;
-};
-
-/* ── Stop ── */
-stopBtn.onclick = () => {
-  clearInterval(timerInterval);
-  navigator.geolocation.clearWatch(watchId);
-  const elapsed = Math.floor((Date.now() - startTime) / 1000);
-  saveRun(elapsed, totalDistance, pathCoordinates);
-  if (pathCoordinates.length > 0)
-    endMarker = L.marker(pathCoordinates[pathCoordinates.length - 1])
-      .addTo(map).bindPopup('🏁 도착').openPopup();
-  resetTimer();
-  loadRuns();
-};
-
-function updateTimer() {
-  const s = Math.floor((Date.now() - startTime) / 1000);
-  timerEl.textContent =
-    String(Math.floor(s / 60)).padStart(2, '0') + ':' +
-    String(s % 60).padStart(2, '0');
 }
 
-function resetTimer() {
+/* ── 시작 ── */
+function startRun() {
+  if (!('geolocation' in navigator)) {
+    alert('이 브라우저는 위치 정보를 지원하지 않습니다.'); return;
+  }
+  startTime      = Date.now();
+  totalPausedMs  = 0;
+  pausedAt       = null;
+  totalDistance  = 0;
+  previousPosition = null;
+  lastPositionTime = null;
+  pathCoordinates  = [];
+  goalReached      = false;
+  smoothedLat      = null; smoothedLng = null;
+  stableReadings   = 0;
+  document.getElementById('currentPace').textContent = '--:--';
+  if (startMarker) startMarker.remove();
+  if (endMarker)   endMarker.remove();
+
+  setRunState('running');
+  startGpsWatch();
+  timerInterval = setInterval(updateTimer, 1000);
+}
+
+/* ── 일시정지 ── */
+function pauseRun() {
+  pausedAt = Date.now();
+  setRunState('paused');
+  // GPS는 계속 보유하되 콜백에서 runState 체크로 무시됨
+  updateGpsStatus('일시정지', 'off');
+  document.getElementById('currentPace').textContent = '--:--';
+}
+
+/* ── 재개 ── */
+function resumeRun() {
+  if (pausedAt) { totalPausedMs += Date.now() - pausedAt; pausedAt = null; }
+  setRunState('running');
+  // GPS 콜백이 다시 20초 이상 멈춤인지 확인
+  gpsStaleCount = 0;
+  stableReadings = Math.max(0, stableReadings - 2); // 재개 시 적응형 필터 살짝 완화
+  updateGpsStatus('신호 잡는 중...', 'weak');
+  // watchPosition은 여전히 살아있음. 새로 시작하면 위치 연속성이 끊기므로 유지
+}
+
+/* ── 저장 종료 ── */
+function saveAndStop() {
+  clearInterval(timerInterval);
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (pausedAt) { totalPausedMs += Date.now() - pausedAt; pausedAt = null; }
+  const elapsed = getElapsedSeconds();
+  saveRun(elapsed, totalDistance, pathCoordinates);
+  if (pathCoordinates.length)
+    endMarker = L.marker(pathCoordinates[pathCoordinates.length - 1])
+      .addTo(map).bindPopup('🏁 도착').openPopup();
+  doReset(); loadRuns();
+}
+
+/* ── 런 취소 ── */
+function cancelRun() {
+  if (!confirm('현재 런을 취소할까요? 기록이 저장되지 않아요.')) return;
+  clearInterval(timerInterval);
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  doReset();
+}
+
+/* ── 공통 리셋 ── */
+function doReset() {
   timerEl.textContent = '00:00';
   distValEl.textContent = '0.00';
   document.getElementById('currentPace').textContent = '--:--';
   document.getElementById('goalProgress').innerHTML = '';
   updateGpsStatus('GPS 대기 중', 'off');
   if (pathPolyline) pathPolyline.setLatLngs([]);
-  startBtn.disabled = false;
-  stopBtn.disabled  = true;
+  setRunState('idle');
 }
+
+/* ── 타이머 & GPS 멈춤 감지 ── */
+function updateTimer() {
+  timerEl.textContent = formatSeconds(getElapsedSeconds());
+
+  // GPS 멈춤 감지: running 중 lastPositionTime이 GPS_STALE_SEC 초 이상 갱신 안 됨
+  if (runState === 'running' && lastPositionTime) {
+    const staleSec = Math.floor((Date.now() - lastPositionTime) / 1000);
+    if (staleSec >= GPS_STALE_SEC) {
+      gpsStaleCount++;
+      updateGpsStatus(`GPS 신호 없음 (${staleSec}초)`, 'weak');
+      // 30초 이상 멈추면 watchPosition 재시작 시도
+      if (gpsStaleCount % 10 === 0) startGpsWatch();
+    }
+  }
+}
+
+function formatSeconds(s) {
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+/* ── 화면 복귀 시 GPS 재시작 (화면 꺼졌다 켜질 때) ── */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && runState === 'running') {
+    const staleSec = lastPositionTime
+      ? Math.floor((Date.now() - lastPositionTime) / 1000) : GPS_STALE_SEC;
+    if (staleSec >= GPS_STALE_SEC) startGpsWatch();
+  }
+});
 
 function updateGpsStatus(msg, level) {
   const el = document.getElementById('gpsStatus');
